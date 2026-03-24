@@ -512,34 +512,170 @@ function makeSection(key, value) {
 }
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
-
 document.getElementById('ts').textContent =
   new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
+const grid = document.getElementById('grid')
+const loader = document.getElementById('loader')
 const t0 = performance.now()
 
-collect().then(data => {
-  document.getElementById('loader').style.display = 'none'
-  const output = document.getElementById('output')
-  output.classList.add('visible')
+const order = [
+  'navigator','screen','window','time','features','protocols',
+  'storage','cookies','permissions','connection','battery',
+  'webgl','webrtcBasic','context','performance','canvas','audio','mediaDevices'
+]
 
-  // Network hero first
-  renderNetHero(data.network)
+// ─── РЕНДЕР ОДНОГО БЛОКА ─────────────────
+function renderChunk(key, value) {
+  if (key === 'network') {
+    renderNetHero(value)
+    return
+  }
 
-  // All other sections in order, skip 'network' (already shown)
-  const grid = document.getElementById('grid')
-  const order = ['navigator','screen','window','time','features','protocols',
-                 'storage','cookies','permissions','connection','battery',
-                 'webgl','webrtcBasic','context','performance','canvas','audio','mediaDevices']
+  const section = makeSection(key, value)
+  grid.appendChild(section)
+}
 
+// ─── ОБЁРТКА ДЛЯ АСИНХРОННОГО СБОРА ─────
+async function collectChunk(key, fn) {
+  try {
+    const result = await fn()
+    renderChunk(key, result)
+  } catch (e) {
+    renderChunk(key, 'error')
+  }
+}
+
+// ─── ЗАПУСК ВСЕГО ПАРАЛЛЕЛЬНО ────────────
+function boot() {
+  document.getElementById('output').classList.add('visible')
+
+  const tasks = {
+    navigator: () => ({
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+      languages: navigator.languages,
+      cookieEnabled: navigator.cookieEnabled,
+      onLine: navigator.onLine,
+      hardwareConcurrency: navigator.hardwareConcurrency,
+      deviceMemory: navigator.deviceMemory,
+      maxTouchPoints: navigator.maxTouchPoints,
+      vendor: navigator.vendor
+    }),
+
+    screen: () => ({
+      width: screen.width,
+      height: screen.height,
+      availWidth: screen.availWidth,
+      availHeight: screen.availHeight,
+      colorDepth: screen.colorDepth,
+      pixelDepth: screen.pixelDepth
+    }),
+
+    window: () => ({
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+      outerWidth: window.outerWidth,
+      outerHeight: window.outerHeight,
+      devicePixelRatio: window.devicePixelRatio
+    }),
+
+    storage: () => ({
+      localStorage: testStorage(localStorage),
+      sessionStorage: testStorage(sessionStorage),
+      indexedDB: !!window.indexedDB
+    }),
+
+    cookies: () => ({
+      enabled: navigator.cookieEnabled,
+      test: testCookies()
+    }),
+
+    permissions: getPermissions,
+
+    connection: () => navigator.connection ? {
+      type: navigator.connection.type,
+      effectiveType: navigator.connection.effectiveType,
+      downlink: navigator.connection.downlink,
+      rtt: navigator.connection.rtt,
+      saveData: navigator.connection.saveData
+    } : 'not supported',
+
+    battery: async () => {
+      if (!navigator.getBattery) return 'not supported'
+      try {
+        const b = await navigator.getBattery()
+        return { level: b.level, charging: b.charging }
+      } catch { return 'blocked' }
+    },
+
+    webgl: getWebGL,
+    canvas: getCanvas,
+    audio: getAudioFingerprint,
+
+    mediaDevices: async () => {
+      try {
+        return await navigator.mediaDevices.enumerateDevices()
+      } catch {
+        return 'blocked'
+      }
+    },
+
+    webrtcBasic: getWebRTC,
+
+    features: () => ({
+      bluetooth: !!navigator.bluetooth,
+      usb: !!navigator.usb,
+      clipboard: !!navigator.clipboard,
+      credentials: !!navigator.credentials,
+      serviceWorker: !!navigator.serviceWorker,
+      share: !!navigator.share
+    }),
+
+    protocols: () => ({
+      https: location.protocol === 'https:',
+      websocket: 'WebSocket' in window,
+      webrtc: 'RTCPeerConnection' in window
+    }),
+
+    time: () => ({
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      offset: new Date().getTimezoneOffset()
+    }),
+
+    context: () => ({
+      iframe: window.self !== window.top,
+      visibility: document.visibilityState
+    }),
+
+    performance: () => performance.memory
+      ? {
+          jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+          totalJSHeapSize: performance.memory.totalJSHeapSize,
+          usedJSHeapSize: performance.memory.usedJSHeapSize
+        }
+      : 'not supported',
+
+    network: getNetworkInfo
+  }
+
+  // 🔥 ПАРАЛЛЕЛЬНЫЙ ЗАПУСК
   for (const key of order) {
-    if (data[key] !== undefined) grid.appendChild(makeSection(key, data[key]))
-  }
-  // Any leftover keys
-  for (const key of Object.keys(data)) {
-    if (!order.includes(key) && key !== 'network') grid.appendChild(makeSection(key, data[key]))
+    if (tasks[key]) collectChunk(key, tasks[key])
   }
 
-  document.getElementById('footer').textContent =
-    `собрано за ${((performance.now() - t0) / 1000).toFixed(2)} с`
-})
+  // network отдельно (чтобы hero появился как только готов)
+  collectChunk('network', tasks.network)
+
+  // убираем loader когда всё завершено
+  Promise.allSettled(
+    Object.values(tasks).map(fn => Promise.resolve().then(fn))
+  ).then(() => {
+    loader.style.display = 'none'
+    document.getElementById('footer').textContent =
+      `собрано за ${((performance.now() - t0) / 1000).toFixed(2)} с`
+  })
+}
+
+boot()
