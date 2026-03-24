@@ -1,7 +1,4 @@
-import struct
-import pyautogui
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
 from starlette.staticfiles import StaticFiles
