@@ -1,0 +1,30 @@
+body {
+    font-family: monospace;
+    font-size: 12px;
+    background: #0b0b0b;
+    color: #00ff9c;
+    padding: 10px;
+}
+
+h1 {
+    font-size: 16px;
+    margin-bottom: 10px;
+}
+
+.section {
+    margin-bottom: 10px;
+    padding: 6px;
+    border: 1px solid #00ff9c;
+}
+
+h2 {
+    font-size: 13px;
+    margin: 0 0 5px 0;
+    color: #ffffff;
+}
+
+pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
